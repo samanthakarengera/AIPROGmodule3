@@ -55,15 +55,111 @@ function createCube() {
   return cube;
 }
 
+function createCloud() {
+  const cloud = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color: 0xf5f7fa });
+  const parts = [
+    { x: -0.65, y: 0, scale: [0.8, 0.48, 0.5] },
+    { x: 0, y: 0.2, scale: [0.78, 0.62, 0.55] },
+    { x: 0.65, y: 0, scale: [0.72, 0.45, 0.5] }
+  ];
+
+  for (const part of parts) {
+    const geometry = new THREE.SphereGeometry(0.7, 24, 16);
+    const puff = new THREE.Mesh(geometry, material);
+    puff.position.set(part.x, part.y, 0);
+    puff.scale.set(...part.scale);
+    cloud.add(puff);
+  }
+
+  cloud.position.set(0, 3.2, 0);
+  return cloud;
+}
+
+function createRain(position) {
+  const dropCount = 90;
+  const dropPositions = new Float32Array(dropCount * 3);
+  const speeds = new Float32Array(dropCount);
+  const vertices = new Float32Array(dropCount * 6);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
+
+  for (let i = 0; i < dropCount; i++) {
+    const index = i * 3;
+    dropPositions[index] = (Math.random() - 0.5) * 2;
+    dropPositions[index + 1] = -0.4 - Math.random() * 2.8;
+    dropPositions[index + 2] = (Math.random() - 0.5) * 0.8;
+    speeds[i] = 2 + Math.random() * 2;
+  }
+
+  const material = new THREE.LineBasicMaterial({ color: 0x8acbe8, transparent: true, opacity: 0.8 });
+  const drops = new THREE.LineSegments(geometry, material);
+  drops.position.copy(position);
+  drops.frustumCulled = false;
+
+  function update(delta) {
+    for (let i = 0; i < dropCount; i++) {
+      const index = i * 3;
+      dropPositions[index + 1] -= speeds[i] * delta;
+      if (dropPositions[index + 1] < -3.5) {
+        dropPositions[index] = (Math.random() - 0.5) * 2;
+        dropPositions[index + 1] = -0.4;
+        dropPositions[index + 2] = (Math.random() - 0.5) * 0.8;
+      }
+
+      const vertexIndex = i * 6;
+      vertices[vertexIndex] = dropPositions[index];
+      vertices[vertexIndex + 1] = dropPositions[index + 1];
+      vertices[vertexIndex + 2] = dropPositions[index + 2];
+      vertices[vertexIndex + 3] = dropPositions[index];
+      vertices[vertexIndex + 4] = dropPositions[index + 1] - 0.18;
+      vertices[vertexIndex + 5] = dropPositions[index + 2];
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+  }
+
+  update(0);
+  return { mesh: drops, update };
+}
+
 const floor = createFloor();
 scene.add(floor);
 
 const cube = createCube();
 scene.add(cube);
 
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const clock = new THREE.Clock();
+let cloud = null;
+let rain = null;
+
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (!cloud) {
+    cloud = createCloud();
+    scene.add(cloud);
+    return;
+  }
+
+  pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  if (!rain && raycaster.intersectObjects(cloud.children).length > 0) {
+    rain = createRain(cloud.position);
+    scene.add(rain.mesh);
+  }
+});
+
 // --- Animation loop ---
 function animate() {
   cube.rotation.y += rotationSpeed;
+  const delta = clock.getDelta();
+  if (rain) {
+    rain.update(delta);
+  }
   renderer.render(scene, camera);
 }
 
